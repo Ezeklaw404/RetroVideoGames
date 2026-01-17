@@ -1,5 +1,5 @@
 from pydantic import BaseModel, EmailStr
-from typing import Optional
+from typing import List, Dict, Optional
 
 class UserCreate(BaseModel):
     name: str
@@ -16,7 +16,8 @@ class UserUpdate(BaseModel):
 
 
 class User(BaseModel):
-    id: int
+    id: Optional[str]
     name: str
     email: EmailStr
     address: str
+    links: List[Dict[str, str]] = []
