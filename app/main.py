@@ -1,9 +1,13 @@
 from fastapi import FastAPI, HTTPException, status, Response
 import bcrypt
 from bson import ObjectId
-from game import Game
-from user import User, UserUpdate, UserCreate
-from db import users_collection, games_collection
+from app.game import Game
+from app.user import User, UserUpdate, UserCreate
+from app.db import users_collection, games_collection
+from dotenv import load_dotenv
+import os
+
+load_dotenv()
 app = FastAPI()
 
 
