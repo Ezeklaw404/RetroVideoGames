@@ -20,4 +20,4 @@ class User(BaseModel):
     name: str
     email: EmailStr
     address: str
-    links: List[Dict[str, str]] = []
+    links: Dict[str, str] = {}

@@ -1,0 +1,29 @@
+services:
+
+  retro_api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    env_file:
+      - ./api/.env
+    networks:
+      - distributed_system
+
+      
+
+  nginx:
+    image: nginx
+    ports:
+      - "8080:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - retro_api
+    networks:
+      - distributed_system
+
+
+
+
+networks:
+  distributed_system:
