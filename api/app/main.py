@@ -1,6 +1,8 @@
 from fastapi import FastAPI, HTTPException, status, Response
 from pymongo import ReturnDocument
 import bcrypt
+from confluent_kafka import Producer
+import json
 from bson import ObjectId
 from app.request import Request, RequestCreate, AcceptRequest
 from app.game import Game, GameCreate, GameUpdate
@@ -193,6 +195,13 @@ def update_user(user_id: str, user: UserUpdate):
     print("------------------ patch user")
     update_data = user.dict(exclude_unset=True)
 
+    password_changed = False
+
+
+    if "password" in update_data:
+        update_data["password"] = hash_password(update_data["password"])
+        password_changed = True
+
     updated_user = users_collection.find_one_and_update(
         {"_id": ObjectId(user_id)},
         {"$set": update_data},
@@ -201,6 +210,17 @@ def update_user(user_id: str, user: UserUpdate):
 
     if not updated_user:
         raise HTTPException(status_code=404, detail="User not found")
+
+    # Send to kafka only if password actually changed
+    if password_changed:
+        event = {
+            "event_type": "PASSWORD_CHANGED",
+            "recipients": [updated_user["email"]],
+            "subject": "Your password was changed",
+            "body": "Your Retro Game Exchange password was successfully updated."
+        }
+
+        send_notification(event)
 
     updated_user.pop("_id")
 
@@ -262,12 +282,26 @@ def get_request(client_id: str):
 @app.post("/requests", response_model=Request, status_code=status.HTTP_201_CREATED)
 def create_request(req: RequestCreate):
     print("------------------ new request")
+
     new_request = req.dict()
     new_request['accepted'] = False
 
-
     result = requests_collection.insert_one(new_request)
     request_id = str(result.inserted_id)
+
+
+    requester = users_collection.find_one({"_id": ObjectId(req.requesterId)})
+    client = users_collection.find_one({"_id": ObjectId(req.clientId)})
+
+    if requester and client:
+        event = {
+            "event_type": "OFFER_CREATED",
+            "recipients": [requester["email"], client["email"]],
+            "subject": "New Video Game Offer Created",
+            "body": "A new offer has been created in Retro Game Exchange."
+        }
+
+        send_notification(event)
 
     return {
         "id": request_id,
@@ -295,20 +329,17 @@ def accept_request(request_id: str, body: AcceptRequest):
     if not updated_request:
         raise HTTPException(status_code=404, detail="Request not found")
 
-    # Only perform ownership swap if accepted is True
+    # Only swap games if True
     if body.accepted:
-        # Get the two games involved
         requested_game = games_collection.find_one({"_id": ObjectId(updated_request["requestedGameId"])})
         offered_game   = games_collection.find_one({"_id": ObjectId(updated_request["offeredGameId"])})
 
         if not requested_game or not offered_game:
             raise HTTPException(status_code=404, detail="One of the games not found")
 
-        # Swap owner IDs
         requested_owner_id = requested_game["owner_id"]
         offered_owner_id   = offered_game["owner_id"]
 
-        # Update requested game
         games_collection.update_one(
             {"_id": requested_game["_id"]},
             {
@@ -317,7 +348,6 @@ def accept_request(request_id: str, body: AcceptRequest):
             }
         )
 
-        # Update offered game
         games_collection.update_one(
             {"_id": offered_game["_id"]},
             {
@@ -325,6 +355,28 @@ def accept_request(request_id: str, body: AcceptRequest):
                 "$inc": {"previousOwnerCount": 1}
             }
         )
+
+    requester = users_collection.find_one({"_id": ObjectId(updated_request["requesterId"])})
+    client = users_collection.find_one({"_id": ObjectId(updated_request["clientId"])})
+
+    if requester and client:
+        if body.accepted:
+            event_type = "OFFER_ACCEPTED"
+            subject = "Offer Accepted"
+            message = "Your video game offer has been accepted."
+        else:
+            event_type = "OFFER_REJECTED"
+            subject = "Offer Rejected"
+            message = "Your video game offer has been rejected."
+
+        event = {
+            "event_type": event_type,
+            "recipients": [requester["email"], client["email"]],
+            "subject": subject,
+            "body": message
+        }
+
+        send_notification(event)
 
     return {
         "id": request_id,
@@ -350,6 +402,34 @@ def delete_request(request_id: str):
 
 
 
+
+
+
+
+
+config = {
+    'bootstrap.servers': 'kafka:9092',
+    'acks': 'all'
+}
+
+producer = Producer(config)
+
+def delivery_callback(err, msg):
+    if err:
+        print(f'Delivery failed: {err}')
+    else:
+        print(f'Message delivered to {msg.topic()}')
+
+def send_notification(event):
+    producer.produce(
+        topic='notifications',
+        key=event['event_type'],
+        value=json.dumps(event),
+        callback=delivery_callback
+    )
+    producer.poll(0)
+
+    producer.flush()
 
 
 
