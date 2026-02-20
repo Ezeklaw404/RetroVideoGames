@@ -13,3 +13,4 @@ db = client["RetroGames"]
 
 users_collection = db["Users"]
 games_collection = db["Games"]
+requests_collection = db["Requests"]

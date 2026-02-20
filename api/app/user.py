@@ -12,6 +12,7 @@ class UserCreate(BaseModel):
 class UserUpdate(BaseModel):
     name: Optional[str] = None
     address: Optional[str] = None
+    password: str
 
 
 
@@ -20,4 +21,4 @@ class User(BaseModel):
     name: str
     email: EmailStr
     address: str
-    links: List[Dict[str, str]] = []
+    links: Dict[str, str] = {}
